@@ -8,7 +8,7 @@ This is a data-analysis app built around one rule: **the language model plans, p
 - A question the parser can't read goes to a model. The model returns a query plan in a fixed vocabulary, not an answer.
 - The plan is validated against the dataset and executed locally. Every answer shows the plan, the working, and the equivalent SQL.
 
-**Live application:** not deployed yet. See [Deploying](#deploying).  
+**Live application:** [agentic-data-analytics-jckbbdq2bppa2m6sgdycaf.streamlit.app](https://agentic-data-analytics-jckbbdq2bppa2m6sgdycaf.streamlit.app/)  
 **GitHub:** [github.com/ABC8023/Agentic-Data-Analytics](https://github.com/ABC8023/Agentic-Data-Analytics)  
 
 ---
