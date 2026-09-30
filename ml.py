@@ -31,6 +31,8 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 
+import ml_export
+import ml_tuning
 from dataset_store import get_or_load_dataframe
 from privacy import model_safe
 from profiling import data_time_column
@@ -536,7 +538,64 @@ def build_ml_preprocessor(numerical_column: list[str],categorial_column:list[str
             )
     return preprocessor
 
-def train_classification_model(name: str,target_column:str, test_size: float =0.2)-> dict[str,Any]:
+def cross_validation_summary(
+    task: str,
+    fold_plan: ml_tuning.FoldPlan,
+    requested_folds: int,
+    tune: bool
+) -> dict[str, Any]:
+    """
+    Describe how the models were compared, for the page and the model card.
+
+    Args:
+        task:
+            classification or regression.
+
+        fold_plan:
+            The folds actually used.
+
+        requested_folds:
+            The folds asked for.
+
+        tune:
+            Whether a search was requested.
+
+    Returns:
+        Fold counts, the score used, whether a search ran, and a note
+        whenever the plan differed from the request.
+    """
+
+    tuned = bool(tune and fold_plan.folds)
+
+    note = fold_plan.note
+
+    if tune and not fold_plan.folds:
+        note = (
+            f"{note} Settings were not tuned, because the search needs "
+            "cross-validation."
+        ).strip()
+
+    return {
+        "requested_folds": int(requested_folds),
+        "folds": int(fold_plan.folds),
+        "scoring": ml_tuning.SCORE_LABEL[task],
+        "tuned": tuned,
+        "search_iterations": (
+            ml_tuning.SEARCH_ITERATIONS
+            if tuned
+            else 0
+        ),
+        "note": note
+    }
+
+
+def train_classification_model(
+    name: str,
+    target_column: str,
+    test_size: float = 0.2,
+    cv_folds: int = ml_tuning.DEFAULT_FOLDS,
+    tune: bool = False
+) -> dict[str, Any]:
     """
     Train and compare several classification models.
 
@@ -544,9 +603,11 @@ def train_classification_model(name: str,target_column:str, test_size: float =0.
     - prepares the dataset,
     - creates a stratified train/test split,
     - applies preprocessing separately within each model pipeline,
-    - trains multiple classifiers,
-    - calculates evaluation metrics,
-    - identifies the best model using macro F1 score.
+    - cross-validates, and optionally tunes, each classifier on the
+      training rows,
+    - scores each classifier once on the held-out test rows,
+    - ranks the models on cross-validated macro F1, or on test macro
+      F1 when cross-validation cannot run.
 
     Args:
         name:
@@ -557,6 +618,13 @@ def train_classification_model(name: str,target_column:str, test_size: float =0.
 
         test_size:
             Proportion of rows reserved for testing.
+
+        cv_folds:
+            Cross-validation folds on the training rows. Below 2 turns
+            cross-validation, and with it tuning, off.
+
+        tune:
+            Search each model's settings with randomised search.
 
     Returns:
         A dictionary containing the leaderboard, confusion matrices,
@@ -679,10 +747,17 @@ def train_classification_model(name: str,target_column:str, test_size: float =0.
 
     class_labels = y.drop_duplicates().tolist()
 
+    fold_plan = ml_tuning.plan_folds(
+        y_train,
+        "classification",
+        cv_folds
+    )
+
     leaderboard = []
     confusion_matrices = {}
     trained_models = {}
     predictions_by_model={}
+    tuned_parameters = {}
 
     for model_name, estimator in candidate_models.items():
 
@@ -702,10 +777,21 @@ def train_classification_model(name: str,target_column:str, test_size: float =0.
 
         start_time = time.perf_counter()
 
-        model_pipeline.fit(
+        # Cross-validation and any search see the training rows only.
+        selection = ml_tuning.fit_and_score(
+            model_pipeline,
             X_train,
-            y_train
+            y_train,
+            task="classification",
+            model_name=model_name,
+            folds=fold_plan.folds,
+            tune=tune
         )
+
+        model_pipeline = selection.pipeline
+
+        if selection.parameters:
+            tuned_parameters[model_name] = selection.parameters
 
         training_seconds = (
             time.perf_counter() - start_time
@@ -774,6 +860,10 @@ def train_classification_model(name: str,target_column:str, test_size: float =0.
                 4
             ),
 
+            "cv_f1_macro": ml_tuning.rounded(selection.cv_mean),
+
+            "cv_f1_macro_std": ml_tuning.rounded(selection.cv_std),
+
             "training_seconds": round(
                 float(training_seconds),
                 4
@@ -796,9 +886,18 @@ def train_classification_model(name: str,target_column:str, test_size: float =0.
         predictions_by_model[model_name] = (
         predictions.tolist())
 
+    # Rank on the cross-validated score when there is one, so the test
+    # rows play no part in choosing the model. Without folds, the test
+    # score is the only evidence left.
+    ranking_key = (
+        "cv_f1_macro"
+        if fold_plan.folds
+        else "f1_macro"
+    )
+
     leaderboard = sorted(
         leaderboard,
-        key=lambda result: result["f1_macro"],
+        key=lambda result: result[ranking_key],
         reverse=True
     )
 
@@ -851,6 +950,18 @@ def train_classification_model(name: str,target_column:str, test_size: float =0.
         ],
         "leaderboard": leaderboard,
         "best_model_name": best_model_name,
+        "ranked_by": ranking_key,
+        "cross_validation": cross_validation_summary(
+            "classification",
+            fold_plan,
+            cv_folds,
+            tune
+        ),
+        "tuned_parameters": tuned_parameters,
+        "training_fingerprint": ml_export.training_fingerprint(
+            X_train,
+            y_train
+        ),
         "confusion_matrices": confusion_matrices,
         "trained_models": trained_models,
         "predictions_by_model": predictions_by_model,
@@ -936,10 +1047,18 @@ def train_classification_model_tool(
         ],
         "leaderboard": result["leaderboard"],
         "best_model_name": result["best_model_name"],
+        "ranked_by": result["ranked_by"],
+        "cross_validation": result["cross_validation"],
         "confusion_matrices": result["confusion_matrices"]
     }
 
-def train_regression_model(name: str,target_column:str, test_size: float =0.2)-> dict[str,Any]:
+def train_regression_model(
+    name: str,
+    target_column: str,
+    test_size: float = 0.2,
+    cv_folds: int = ml_tuning.DEFAULT_FOLDS,
+    tune: bool = False
+) -> dict[str, Any]:
     """
     Train and compare several regression models.
 
@@ -947,9 +1066,11 @@ def train_regression_model(name: str,target_column:str, test_size: float =0.2)->
     - prepares numerical and categorical features,
     - removes rows with missing target values,
     - creates a train/test split,
-    - trains multiple regression models,
-    - evaluates each model using MAE, RMSE and R²,
-    - selects the best model using RMSE.
+    - cross-validates, and optionally tunes, each model on the training
+      rows,
+    - evaluates each model once on the test rows using MAE, RMSE and R²,
+    - ranks the models on cross-validated RMSE, or on test RMSE when
+      cross-validation cannot run.
 
     Args:
         name:
@@ -960,6 +1081,13 @@ def train_regression_model(name: str,target_column:str, test_size: float =0.2)->
 
         test_size:
             Fraction of rows reserved for testing.
+
+        cv_folds:
+            Cross-validation folds on the training rows. Below 2 turns
+            cross-validation, and with it tuning, off.
+
+        tune:
+            Search each model's settings with randomised search.
 
     Returns:
         Regression leaderboard, best model, predictions,
@@ -1062,9 +1190,16 @@ def train_regression_model(name: str,target_column:str, test_size: float =0.2)->
 
     
 
+    fold_plan = ml_tuning.plan_folds(
+        y_train,
+        "regression",
+        cv_folds
+    )
+
     leaderboard = []
     predictions_by_model = {}
     trained_models = {}
+    tuned_parameters = {}
 
     for model_name, estimator in candidate_models.items():
 
@@ -1084,10 +1219,21 @@ def train_regression_model(name: str,target_column:str, test_size: float =0.2)->
 
         start_time = time.perf_counter()
 
-        model_pipeline.fit(
+        # Cross-validation and any search see the training rows only.
+        selection = ml_tuning.fit_and_score(
+            model_pipeline,
             X_train,
-            y_train
+            y_train,
+            task="regression",
+            model_name=model_name,
+            folds=fold_plan.folds,
+            tune=tune
         )
+
+        model_pipeline = selection.pipeline
+
+        if selection.parameters:
+            tuned_parameters[model_name] = selection.parameters
 
         training_seconds = (
             time.perf_counter() - start_time
@@ -1113,6 +1259,8 @@ def train_regression_model(name: str,target_column:str, test_size: float =0.2)->
             "mae":round(float(mae),4),
             "rmse":round(float(rmse),4),
             "r2_score":round(float(r2),4),
+            "cv_rmse": ml_tuning.rounded(selection.cv_mean),
+            "cv_rmse_std": ml_tuning.rounded(selection.cv_std),
             "training_seconds":round(float(training_seconds),4)})
 
         
@@ -1121,10 +1269,17 @@ def train_regression_model(name: str,target_column:str, test_size: float =0.2)->
         predictions_by_model[model_name]=predictions.tolist()
         
 
+    # Rank on the cross-validated error when there is one, so the test
+    # rows play no part in choosing the model.
+    ranking_key = (
+        "cv_rmse"
+        if fold_plan.folds
+        else "rmse"
+    )
+
     leaderboard = sorted(
         leaderboard,
-        key=lambda result: result["rmse"],
-        
+        key=lambda result: result[ranking_key],
     )
 
     best_model_name = leaderboard[0]["model"]
@@ -1166,6 +1321,18 @@ def train_regression_model(name: str,target_column:str, test_size: float =0.2)->
         ],
         "leaderboard": leaderboard,
         "best_model_name": best_model_name,
+        "ranked_by": ranking_key,
+        "cross_validation": cross_validation_summary(
+            "regression",
+            fold_plan,
+            cv_folds,
+            tune
+        ),
+        "tuned_parameters": tuned_parameters,
+        "training_fingerprint": ml_export.training_fingerprint(
+            X_train,
+            y_train
+        ),
         "trained_models": trained_models,
         "predictions_by_model": predictions_by_model,
         "X_test": X_test,
@@ -1275,7 +1442,9 @@ def train_regression_model_tool(
             "high_cardinality_columns_removed"
         ],
         "leaderboard": result["leaderboard"],
-        "best_model_name": result["best_model_name"]
+        "best_model_name": result["best_model_name"],
+        "ranked_by": result["ranked_by"],
+        "cross_validation": result["cross_validation"]
     }
 
 def calculate_feature_importance(

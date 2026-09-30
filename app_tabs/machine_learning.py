@@ -7,11 +7,13 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
+import ml_tuning
 from ml import (
     calculate_feature_importance,
     train_classification_model,
     train_regression_model,
 )
+from ml_export import export_model
 from ui_cache import (
     cached_target_analysis,
 )
@@ -24,6 +26,145 @@ from ui_theme import (
     styled,
     table,
 )
+
+LEADERBOARD_COLUMNS = {
+    "classification": {
+        "model": "Model",
+        "cv_f1_macro": "CV macro F1",
+        "cv_f1_macro_std": "CV spread (sd)",
+        "accuracy": "Test accuracy",
+        "balanced_accuracy": "Test balanced accuracy",
+        "precision_macro": "Test macro precision",
+        "recall_macro": "Test macro recall",
+        "f1_macro": "Test macro F1",
+        "training_seconds": "Training time (seconds)",
+    },
+    "regression": {
+        "model": "Model",
+        "cv_rmse": "CV RMSE",
+        "cv_rmse_std": "CV spread (sd)",
+        "mae": "Test MAE",
+        "rmse": "Test RMSE",
+        "r2_score": "Test R²",
+        "training_seconds": "Training time (seconds)",
+    },
+}
+
+CV_COLUMNS = {"cv_f1_macro", "cv_f1_macro_std", "cv_rmse", "cv_rmse_std"}
+
+LEADERBOARD_MODEL_NAMES = {
+    task: list(spaces)
+    for task, spaces in ml_tuning.SEARCH_SPACES.items()
+}
+
+
+def leaderboard_frame(ml_result):
+    """The leaderboard with readable headings, CV columns first."""
+
+    columns = LEADERBOARD_COLUMNS[ml_result["task"]]
+
+    frame = pd.DataFrame(ml_result["leaderboard"])
+
+    if not ml_result.get("cross_validation", {}).get("folds"):
+        frame = frame.drop(
+            columns=[
+                column
+                for column in CV_COLUMNS
+                if column in frame.columns
+            ]
+        )
+
+    return frame[
+        [column for column in columns if column in frame.columns]
+    ].rename(columns=columns)
+
+
+def render_selection_notes(ml_result):
+    """Say how the ranking was made, and which settings a search chose."""
+
+    summary = ml_result.get("cross_validation", {})
+
+    if summary.get("folds"):
+        text = (
+            f"Ranked on {summary['scoring']} averaged over "
+            f"{summary['folds']} folds of the "
+            f"{ml_result['training_rows']:,} training rows. The test "
+            f"scores come from {ml_result['testing_rows']:,} held-out "
+            "rows that played no part in choosing the model."
+        )
+
+        if summary.get("tuned"):
+            text += (
+                " With tuning on, each cross-validated score is the best "
+                "one the search found, so it runs slightly optimistic. "
+                "The test scores don't."
+            )
+
+    else:
+        text = (
+            f"Ranked on the test {summary.get('scoring', 'score')}, "
+            "because cross-validation didn't run."
+        )
+
+    st.caption(text)
+
+    if summary.get("note") and summary.get("requested_folds", 0) >= 2:
+        st.info(summary["note"])
+
+    tuned = ml_result.get("tuned_parameters") or {}
+
+    if tuned:
+        section("Tuned settings")
+
+        table(
+            pd.DataFrame([
+                {
+                    "Model": model_name,
+                    "Settings chosen": ", ".join(
+                        f"{name} = {value}"
+                        for name, value in settings.items()
+                    ),
+                }
+                for model_name, settings in tuned.items()
+            ]),
+            width="stretch",
+            hide_index=True
+        )
+
+        untuned = [
+            model_name
+            for model_name in LEADERBOARD_MODEL_NAMES[ml_result["task"]]
+            if model_name not in tuned
+        ]
+
+        if untuned:
+            st.caption(
+                f"{', '.join(untuned)} kept the default settings, as "
+                "there is nothing worth searching."
+            )
+
+
+def model_download_button(ml_result, key):
+    """
+    Offer the best model as a zip. The file is built only when clicked.
+    """
+
+    best_model_name = ml_result["best_model_name"]
+
+    st.download_button(
+        label="Download best model",
+        data=lambda: export_model(ml_result, best_model_name),
+        file_name=(
+            f"{ml_result['target_column']}_{ml_result['task']}_model.zip"
+        ),
+        mime="application/zip",
+        on_click="ignore",
+        key=key,
+        help=(
+            "A zip with the fitted pipeline in skops format, a model "
+            "card and a loading guide."
+        )
+    )
 
 
 def render(*, data_version, dataframe, dataset_key):
@@ -161,6 +302,47 @@ def render(*, data_version, dataframe, dataset_key):
 
         test_size_fraction = test_size / 100
 
+        validation_column, tuning_column = st.columns(2)
+
+        with validation_column:
+            cross_validate = st.checkbox(
+                "Cross-validate on the training rows",
+                value=True,
+                key="ml_cross_validate",
+                help=(
+                    "Each model is scored across several folds of the "
+                    "training rows, and ranked on the average. The test "
+                    "rows are kept for one final check."
+                )
+            )
+
+            cv_folds = st.slider(
+                "Folds",
+                min_value=3,
+                max_value=ml_tuning.MAX_FOLDS,
+                value=ml_tuning.DEFAULT_FOLDS,
+                key="ml_cv_folds",
+                disabled=not cross_validate
+            )
+
+        with tuning_column:
+            tune_models = st.checkbox(
+                "Tune model settings",
+                value=False,
+                key="ml_tune",
+                disabled=not cross_validate,
+                help=(
+                    f"Tries up to {ml_tuning.SEARCH_ITERATIONS} settings "
+                    "per model with randomised search, scored by "
+                    "cross-validation. Training takes several times "
+                    "longer."
+                )
+            )
+
+        if not cross_validate:
+            cv_folds = 0
+            tune_models = False
+
         if st.button(
             "Train and compare models",
             type="primary",
@@ -182,14 +364,18 @@ def render(*, data_version, dataframe, dataset_key):
                     ml_result = train_classification_model(
                         name=dataset_key,
                         target_column=target_column,
-                        test_size=test_size_fraction
+                        test_size=test_size_fraction,
+                        cv_folds=cv_folds,
+                        tune=tune_models
                     )
 
                 else:
                     ml_result = train_regression_model(
                         name=dataset_key,
                         target_column=target_column,
-                        test_size=test_size_fraction
+                        test_size=test_size_fraction,
+                        cv_folds=cv_folds,
+                        tune=tune_models
                     )
 
                 st.session_state.ml_result = ml_result
@@ -234,26 +420,8 @@ def render(*, data_version, dataframe, dataset_key):
 
                 section("Model leaderboard")
 
-                classification_leaderboard = pd.DataFrame(
-                    ml_result["leaderboard"]
-                )
-
-                classification_leaderboard = (
-                    classification_leaderboard.rename(
-                        columns={
-                            "model": "Model",
-                            "accuracy": "Accuracy",
-                            "balanced_accuracy": (
-                                "Balanced accuracy"
-                            ),
-                            "precision_macro": "Macro precision",
-                            "recall_macro": "Macro recall",
-                            "f1_macro": "Macro F1",
-                            "training_seconds": (
-                                "Training time (seconds)"
-                            )
-                        }
-                    )
+                classification_leaderboard = leaderboard_frame(
+                    ml_result
                 )
 
                 table(
@@ -261,6 +429,8 @@ def render(*, data_version, dataframe, dataset_key):
                     width="stretch",
                     hide_index=True
                 )
+
+                render_selection_notes(ml_result)
 
                 best_model_name = ml_result[
                     "best_model_name"
@@ -274,8 +444,10 @@ def render(*, data_version, dataframe, dataset_key):
 
                 section("Best model")
 
+                # The name gets the wide column, so "Logistic
+                # Regression" is not cut short.
                 best_column1, best_column2, best_column3 = (
-                    st.columns(3)
+                    st.columns([2, 1, 1])
                 )
 
                 with best_column1:
@@ -286,13 +458,13 @@ def render(*, data_version, dataframe, dataset_key):
 
                 with best_column2:
                     st.metric(
-                        "Accuracy",
+                        "Test accuracy",
                         f"{best_result['accuracy']:.2%}"
                     )
 
                 with best_column3:
                     st.metric(
-                        "Macro F1",
+                        "Test macro F1",
                         f"{best_result['f1_macro']:.2%}"
                     )
 
@@ -379,7 +551,9 @@ def render(*, data_version, dataframe, dataset_key):
                     .encode("utf-8")
                 )
 
-                download_column1, download_column2 = st.columns(2)
+                download_column1, download_column2, download_column3 = (
+                    st.columns(3)
+                )
 
                 with download_column1:
                     st.download_button(
@@ -405,6 +579,12 @@ def render(*, data_version, dataframe, dataset_key):
                         key="download_classification_predictions"
                     )
 
+                with download_column3:
+                    model_download_button(
+                        ml_result,
+                        key="download_classification_model"
+                    )
+
             else:
                 st.success(
                     "Regression models trained successfully."
@@ -412,22 +592,8 @@ def render(*, data_version, dataframe, dataset_key):
 
                 section("Model leaderboard")
 
-                regression_leaderboard = pd.DataFrame(
-                    ml_result["leaderboard"]
-                )
-
-                regression_leaderboard = (
-                    regression_leaderboard.rename(
-                        columns={
-                            "model": "Model",
-                            "mae": "MAE",
-                            "rmse": "RMSE",
-                            "r2_score": "R²",
-                            "training_seconds": (
-                                "Training time (seconds)"
-                            )
-                        }
-                    )
+                regression_leaderboard = leaderboard_frame(
+                    ml_result
                 )
 
                 table(
@@ -435,6 +601,8 @@ def render(*, data_version, dataframe, dataset_key):
                     width="stretch",
                     hide_index=True
                 )
+
+                render_selection_notes(ml_result)
 
                 best_model_name = ml_result[
                     "best_model_name"
@@ -448,8 +616,10 @@ def render(*, data_version, dataframe, dataset_key):
 
                 section("Best model")
 
+                # The name gets the wide column, so "Linear
+                # Regression" is not cut short.
                 best_column1, best_column2, best_column3, best_column4 = (
-                    st.columns(4)
+                    st.columns([2, 1, 1, 1])
                 )
 
                 with best_column1:
@@ -460,19 +630,19 @@ def render(*, data_version, dataframe, dataset_key):
 
                 with best_column2:
                     st.metric(
-                        "MAE",
+                        "Test MAE",
                         f"{best_result['mae']:.4f}"
                     )
 
                 with best_column3:
                     st.metric(
-                        "RMSE",
+                        "Test RMSE",
                         f"{best_result['rmse']:.4f}"
                     )
 
                 with best_column4:
                     st.metric(
-                        "R²",
+                        "Test R²",
                         f"{best_result['r2_score']:.4f}"
                     )
 
@@ -578,7 +748,9 @@ def render(*, data_version, dataframe, dataset_key):
                     .encode("utf-8")
                 )
 
-                download_column1, download_column2 = st.columns(2)
+                download_column1, download_column2, download_column3 = (
+                    st.columns(3)
+                )
 
                 with download_column1:
                     st.download_button(
@@ -602,6 +774,12 @@ def render(*, data_version, dataframe, dataset_key):
                         ),
                         mime="text/csv",
                         key="download_regression_predictions"
+                    )
+
+                with download_column3:
+                    model_download_button(
+                        ml_result,
+                        key="download_regression_model"
                     )
 
             if ml_result.get("success"):

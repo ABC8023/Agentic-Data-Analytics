@@ -1,6 +1,6 @@
 [project]
 name = "automated-data-analyst"
-version = "2.0.0"
+version = "2.1.0"
 description = "Upload a CSV or Excel file and get automated analysis, charts, models and an auditable AI analyst."
 requires-python = ">=3.12"
 

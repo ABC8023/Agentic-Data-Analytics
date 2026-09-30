@@ -125,12 +125,15 @@ class ClassificationTest(unittest.TestCase):
     def test_three_models_are_compared(self):
         self.assertEqual(len(self.result["leaderboard"]), 3)
 
-    def test_leaderboard_is_ranked_by_macro_f1(self):
+    def test_leaderboard_is_ranked_by_cross_validated_macro_f1(self):
+        # The test rows play no part in the ranking, so the test macro F1
+        # need not be in order.
         scores = [
-            row["f1_macro"]
+            row["cv_f1_macro"]
             for row in self.result["leaderboard"]
         ]
 
+        self.assertEqual(self.result["ranked_by"], "cv_f1_macro")
         self.assertEqual(scores, sorted(scores, reverse=True))
 
     def test_best_model_matches_the_top_of_the_leaderboard(self):
@@ -237,9 +240,10 @@ class RegressionTest(unittest.TestCase):
     def test_training_succeeds(self):
         self.assertTrue(self.result["success"])
 
-    def test_leaderboard_is_ranked_by_rmse_ascending(self):
-        scores = [row["rmse"] for row in self.result["leaderboard"]]
+    def test_leaderboard_is_ranked_by_cross_validated_rmse_ascending(self):
+        scores = [row["cv_rmse"] for row in self.result["leaderboard"]]
 
+        self.assertEqual(self.result["ranked_by"], "cv_rmse")
         self.assertEqual(scores, sorted(scores))
 
     def test_linear_signal_is_recovered(self):

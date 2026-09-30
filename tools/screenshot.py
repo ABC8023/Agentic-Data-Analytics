@@ -156,6 +156,29 @@ async def capture(arguments, debug_port):
         time.sleep(1.5)
         await wait_ready(session, arguments.timeout)
 
+    # Press buttons or tick checkboxes by their visible text, in order,
+    # waiting for the app to settle after each one.
+    for text in arguments.click:
+        press_js = (
+            "(() => { const wanted = " + json.dumps(text) + ";"
+            " const box = [...document.querySelectorAll('input[type=checkbox]')]"
+            ".find(e => e.getAttribute('aria-label') === wanted);"
+            " if (box) { box.scrollIntoView(); box.click(); return true; }"
+            " const label = [...document.querySelectorAll('label')]"
+            ".find(e => e.innerText.trim() === wanted && e.querySelector('input'));"
+            " if (label) { label.scrollIntoView(); label.querySelector('input').click(); return true; }"
+            " const found = [...document.querySelectorAll('button')]"
+            ".find(e => e.innerText.trim() === wanted && e.offsetParent);"
+            " if (found) { found.scrollIntoView(); found.click(); return true; }"
+            " return false; })()"
+        )
+
+        if not await session.evaluate(press_js):
+            print(f"warning: nothing visible called {text!r}", file=sys.stderr)
+
+        time.sleep(2.0)
+        await wait_ready(session, arguments.timeout)
+
     time.sleep(arguments.settle)
 
     page_height = arguments.height
@@ -216,6 +239,12 @@ def main():
     parser.add_argument("name")
     parser.add_argument("--query", default="")
     parser.add_argument("--tab", default="")
+    parser.add_argument(
+        "--click",
+        action="append",
+        default=[],
+        help="Visible text of a button or checkbox to press. Repeatable.",
+    )
     parser.add_argument("--port", type=int, default=8599)
     parser.add_argument("--width", type=int, default=1440)
     parser.add_argument("--height", type=int, default=900)

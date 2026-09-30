@@ -143,7 +143,10 @@ More detail is in [evals/README.md](evals/README.md).
 **Machine learning**
 - Classification or regression recommended from the target
 - Three models per task, compared with pipeline preprocessing
-- Leaderboards, confusion matrix, permutation importance and downloads
+- Ranked by 5-fold cross-validation on the training rows. The held-out test rows are scored once, after the choice.
+- Optional hyperparameter search (randomised, inside the folds), with the chosen settings shown
+- Leaderboards, confusion matrix, permutation importance and CSV downloads
+- The best model can be downloaded in skops format with a model card, not as a pickle
 
 **AI analysis**
 - The routing described above
@@ -188,6 +191,8 @@ dataset_store.py        Session-scoped dataset cache and safe loading
 profiling.py            Quality, schema, statistics and date detection
 cleaning.py             Cleaning operations
 ml.py                   Training pipelines, metrics and feature importance
+ml_tuning.py            Cross-validation folds and hyperparameter search
+ml_export.py            Model download: skops file, model card, safe loading
 charts.py               Chart recommendations and Plotly figures
 business_insights.py    Dashboard evidence, recommendations and brief
 aggregation.py, timeseries.py, anomalies.py, forecasting.py, segments.py,
@@ -319,11 +324,47 @@ CI runs lint, a byte-compile and the full suite on Python 3.12 and 3.13, with no
 
 ## Limitations
 
-- Model evaluation uses a single train/test split, and hyperparameter search is limited.
+**Data**
+- Files are limited to CSV and Excel (`.xlsx`, `.xlsm`), up to 25 MB and 200,000 rows. Longer files are cut to the first 200,000 rows, and the app says so. Images, PDFs and free text aren't analysed.
+- Everything runs in memory in one process. Datasets are cached per session, 32 at most, and are lost when the app restarts.
+- Column roles (date, measure, identifier, category) are detected from names and value patterns. An unusual layout can be misread, and the user can't yet correct a role by hand.
+
+**Machine learning**
+- Classification or regression is chosen by a heuristic. For example, a target with at most 20 distinct values that repeat enough is treated as classification. The recommendation is shown with its reason, and the user can override it.
+- Models are ranked by cross-validation, but the final test score still comes from one held-out split. On a small table it can move noticeably with a different split. Nested cross-validation isn't used.
+- The hyperparameter search is small: up to 8 candidates per model from a fixed space. It's a sanity check on the defaults, not a thorough search. A tuned model's cross-validated score is slightly optimistic, which the page says.
+- A downloaded model needs the same library versions, which are listed in its model card. New rows need the same date conversion as training, and the card explains it. The app can't reload a model or score new data with it.
+- Permutation importance shows what the model relies on, measured on the test split. It isn't evidence of cause and effect, and correlated features share or hide importance.
+- Training runs in the request, so a large file keeps the page busy until it finishes. Cross-validation roughly multiplies the time by the number of folds, and tuning by about 8 again. On the 150-row and 3,660-row samples, training took about 2 seconds with cross-validation and 12 with tuning on a laptop. The hosted app is slower.
+
+**AI answers**
 - The SQL backend covers aggregate and breakdown plans. Time-series, compare, trend and share plans run in pandas.
+- The 67-case evaluation set is small and built around the sample datasets. It shows the planner behaves on known questions, not that it's accurate on every table.
 - The streamed agent answer was checked by hand against the real model: the first words arrived in 2 to 4 seconds, with two tool calls behind the answer. Only the fake-model tests run automatically.
 - Free-tier Gemini quotas are per model and small, often 20 requests a day. Pin a model with spare quota using `AI_ANALYST_MODEL`.
+
+**Operations and security**
+- This is a portfolio application. It hasn't had a security review, and it shouldn't be used for regulated or personal data without one.
+- Question events go to the log, or to a JSON Lines file. There's no dashboard or alerting on top of them.
 - The Docker image is built and smoke-tested in CI, not locally.
+
+---
+
+## Future improvements
+
+In rough order of value:
+
+1. **Scoring new data.** Upload a saved model and a new file, apply the same date conversion, and download the predictions. The model card already records what's needed.
+2. **Background training.** Move training to a worker queue with a progress display, so large files and tuning don't block the page.
+3. **Drift monitoring.** Compare new data with the training profile, using the population stability index and KS tests, and flag when a model needs retraining. The model card's fingerprint and feature lists are the starting point.
+4. **Warehouse connections.** Read from Postgres, BigQuery or Snowflake with read-only credentials. Extend the SQL compiler to the remaining plan types, so work runs in the database instead of in memory.
+5. **Better column detection.** Recognise currencies, geographies and identifiers more reliably, use the glossary as a hint, and let users correct a column's role. Measure the result against a labelled set of real tables.
+6. **Stronger model evaluation.** Use nested cross-validation for tuned models, and give test scores confidence intervals by bootstrapping.
+7. **Scheduled reports.** Export the dashboard brief as PDF, and send it on a schedule.
+8. **Telemetry dashboard.** Send question events to OpenTelemetry, and chart pass rate, latency and cost from the nightly evaluation over time.
+9. **Screen reader testing.** Test the app with NVDA and VoiceOver, beyond the automated axe-core checks.
+
+Already done: cross-validation, hyperparameter search and model download (`ml_tuning.py`, `ml_export.py`), sign-in (`auth.py`), a downloadable brief (dashboard), and SQL execution on DuckDB (`sql_backend.py`).
 
 ---
 

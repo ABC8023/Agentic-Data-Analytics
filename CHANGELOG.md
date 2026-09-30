@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.1.0
+
+### Added
+
+- Cross-validation in model training. Each model is scored over 5 folds of the training rows by default (3 to 10 folds, stratified for classification), with the mean and spread shown. Models are ranked on this score, and the test rows are only used for the final check (`ml_tuning.py`).
+- Optional hyperparameter search. It tries up to 8 settings per model with randomised search inside the same folds, and shows the settings it chose. The page notes that a tuned cross-validated score is slightly optimistic, and the test score isn't.
+- A model download: a zip with the fitted pipeline in skops format, a model card (features, date conversions, scores, settings, a training-data fingerprint, library versions and caveats), and a loading guide. `ml_export.load_model` refuses a file with types this app never writes (`ml_export.py`).
+- `tools/screenshot.py --click` presses buttons and ticks checkboxes before the capture.
+
+### Changed
+
+- The leaderboard is ranked on the cross-validated score instead of the test score. Test metrics are labelled "Test" to make the difference clear.
+- The agent's training tools report how the models were compared.
+
 ## 2.0.0
 
 ### Added

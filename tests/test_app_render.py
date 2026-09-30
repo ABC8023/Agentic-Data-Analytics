@@ -365,6 +365,52 @@ class MachineLearningTabTest(unittest.TestCase):
 
         self.assertFalse(app.button(key="train_ml_models").disabled)
 
+    def test_the_ranking_is_explained_and_the_model_can_be_downloaded(self):
+        app = start(classification_frame())
+
+        app.selectbox(key="ml_target_column").select("churned").run()
+        app.button(key="train_ml_models").click().run()
+
+        captions = " ".join(caption.value for caption in app.caption)
+        downloads = [button.label for button in app.get("download_button")]
+
+        self.assertEqual(errors(app), [])
+        self.assertIn("averaged over 5 folds", captions)
+        self.assertIn("Download best model", downloads)
+
+    def test_tuning_shows_the_settings_it_chose(self):
+        app = start(regression_frame())
+
+        app.selectbox(key="ml_target_column").select("target").run()
+        app.checkbox(key="ml_tune").check().run()
+        app.button(key="train_ml_models").click().run()
+
+        captions = " ".join(caption.value for caption in app.caption)
+
+        self.assertEqual(errors(app), [])
+        self.assertTrue(app.session_state["ml_result"]["tuned_parameters"])
+        self.assertIn("slightly optimistic", captions)
+        self.assertIn("Linear Regression kept the default", captions)
+
+    def test_switching_cross_validation_off_ranks_on_the_test_rows(self):
+        app = start(classification_frame())
+
+        app.selectbox(key="ml_target_column").select("churned").run()
+        app.checkbox(key="ml_cross_validate").uncheck().run()
+
+        self.assertTrue(app.checkbox(key="ml_tune").disabled)
+
+        app.button(key="train_ml_models").click().run()
+
+        captions = " ".join(caption.value for caption in app.caption)
+
+        self.assertEqual(errors(app), [])
+        self.assertIn("because cross-validation didn't run", captions)
+        self.assertEqual(
+            app.session_state["ml_result"]["ranked_by"],
+            "f1_macro"
+        )
+
 
 class CleaningTabTest(unittest.TestCase):
 
