@@ -1,0 +1,19 @@
+# Secrets never enter the image; pass them at run time with --env-file.
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+
+.git
+.github
+.kiro
+.venv
+venv
+env
+__pycache__
+*.py[cod]
+.ruff_cache
+.pytest_cache
+.mypy_cache
+tools/results
+*.log

@@ -1,0 +1,58 @@
+[project]
+name = "automated-data-analyst"
+version = "2.0.0"
+description = "Upload a CSV or Excel file and get automated analysis, charts, models and an auditable AI analyst."
+requires-python = ">=3.11"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+exclude = [
+    ".venv",
+    ".kiro",
+    "assets",
+    "sample_data",
+]
+
+[tool.ruff.lint]
+select = [
+    "E4",   # import formatting
+    "E7",   # statement style
+    "E9",   # syntax and IO errors
+    "F",    # pyflakes: undefined names, unused imports
+    "I",    # import sorting
+    "UP",   # pyupgrade
+    "B",    # bugbear: likely bugs
+    "SIM",  # simplifiable code
+    "ISC",  # implicit string concatenation
+]
+
+ignore = [
+    # Plotly's own documentation writes layout definitions as dict(...),
+    # and the surrounding code follows that convention.
+    "C408",
+    # Broad excepts are deliberate at the two boundaries where an
+    # unexpected failure must become a message rather than a crashed
+    # page: chart construction and file loading.
+    "BLE001",
+    # int(np.ceil(...)) is an intentional narrowing from numpy float to a
+    # Python int used as a row count. The suggested fix changes the type.
+    "RUF046",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests build deliberately awkward fixtures and assert on private detail.
+"tests/*" = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = [
+    "agent_data_analysis",
+    "charts",
+    "cleaning",
+    "dataset_store",
+    "ml",
+    "profiling",
+    "file_io",
+    "privacy",
+    "schema",
+]

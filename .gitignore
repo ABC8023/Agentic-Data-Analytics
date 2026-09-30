@@ -1,0 +1,66 @@
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Testing and linting cache
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Timestamped output from tools/run_tests.py and tools/run_lint.py
+tools/results/
+tools/lint.txt
+tools/lint_summary.txt
+tools/stdout.txt
+tools/stderr.txt
+tools/test_summary.txt
+
+# Local AI-editor configuration and installed skill packs, not part of
+# the app.
+.kiro/
+
+# IDE files
+.vscode/
+.idea/
+
+# Operating-system files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+~$*
+
+# Build files
+build/
+dist/
+*.egg-info/
+
+# Generated model files
+*.pkl
+*.pickle
+*.joblib
+
+# Large generated data files
+*.parquet
+*.feather
+
+# Coverage
+.coverage
+htmlcov/

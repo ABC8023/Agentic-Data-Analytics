@@ -1,0 +1,37 @@
+Known facts about sample_data/store_orders.csv
+==============================================
+
+Rows in the file: 3,660
+Rows with an unreadable revenue: 25 (written as 'not recorded')
+Rows with a blank region: 40
+Exact duplicate rows: 12
+A column that never changes: source_system
+An identifier column: order_reference
+
+Date range: 2023-01-01 to 2025-06-30
+Complete months of data: 30
+
+-- Totals you can check --
+
+Total revenue, whole file: 1,513,129.01
+
+Total revenue by region, largest first:
+  north: 750,985.99 (49.6% of the total)
+  south: 374,875.67 (24.8% of the total)
+  east: 225,896.43 (14.9% of the total)
+  west: 150,351.02 (9.9% of the total)
+  (not set): 11,019.90 (0.7% of the total)
+
+  The highest month is Mar 2024 at 132,212.27, which is the planted anomaly.
+  The lowest month is May 2023 at 30,161.14.
+
+Latest complete month (Jun 2025): 69,761.49
+Month before (May 2025): 73,904.14
+Change: -4,142.65 (-5.6%)
+
+-- What the application should say --
+
+Trend: rising, and distinguishable from flat.
+Unusual period: 2024-03 should be flagged, because it was multiplied by 2.6.
+Concentration: north is the largest part at roughly 50%, which is well clear of an even split, so it is called out.
+Duplicates and blank regions should both appear as data-quality findings.

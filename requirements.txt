@@ -1,0 +1,32 @@
+# Pinned to the set the test suite is green against.
+#
+# langchain is pinned to a major range as well as an exact version because
+# create_agent and init_chat_model are 1.x API. An unconstrained install
+# that resolved to 0.x fails at import with no useful message.
+
+streamlit==1.61.1
+pandas==3.0.5
+numpy==2.5.1
+scipy==1.18.0
+scikit-learn==1.9.0
+plotly==6.9.0
+openpyxl==3.1.5
+
+langchain==1.3.14
+langchain-core==1.5.3
+langchain-google-genai==3.1.0
+
+python-dotenv==1.2.2
+
+# Runs a query plan as SQL (sql_backend.py). Imported lazily, so the app
+# starts without it; compiling a plan to SQL needs no database at all.
+duckdb==1.5.6
+
+# The HTTP API (api.py). uvicorn is pinned to the version Streamlit
+# already resolves, so the two do not fight over it.
+fastapi==0.141.1
+uvicorn==0.52.1
+
+# Shared API rate limit across instances. Only imported when
+# AI_ANALYST_REDIS_URL is set.
+redis==8.1.0
