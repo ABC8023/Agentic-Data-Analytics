@@ -2,7 +2,7 @@
 name = "automated-data-analyst"
 version = "2.0.0"
 description = "Upload a CSV or Excel file and get automated analysis, charts, models and an auditable AI analyst."
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 
 [tool.ruff]
 target-version = "py311"

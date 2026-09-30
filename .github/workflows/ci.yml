@@ -13,7 +13,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12"]
+        # numpy 2.5 needs Python 3.12 or newer, so 3.11 cannot install the
+        # pinned requirements.
+        python-version: ["3.12", "3.13"]
 
     steps:
       - uses: actions/checkout@v4

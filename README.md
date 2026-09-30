@@ -299,7 +299,7 @@ python tools/eval_planner.py
 
 For design review, `tools/screenshot.py` captures the running app in headless Chrome, for example `python tools/screenshot.py dashboard --query sample=store_orders --full`. Long pages are split into tiles no larger than 1,800 px. The theme itself is set in `.streamlit/config.toml`.
 
-CI runs lint, a byte-compile and the full suite on Python 3.11 and 3.12, with no API key. The suite includes the offline evaluation gate, the privacy contract, and the SQL/pandas parity test.
+CI runs lint, a byte-compile and the full suite on Python 3.12 and 3.13, with no API key. The suite includes the offline evaluation gate, the privacy contract, and the SQL/pandas parity test.
 
 ---
 
