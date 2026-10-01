@@ -1368,6 +1368,22 @@ def describe_trail(trail: list[dict[str, Any]]) -> str:
     return f"Show the calculation ({len(trail)} steps)"
 
 
+def unique_notes(*groups) -> list[str]:
+    """
+    Join note lists in order, keeping each note once.
+
+    The parser and the executor both validate the plan, so the same
+    warning, such as rows excluded for an unusable measure, used to be
+    shown twice under one answer.
+    """
+
+    return list(dict.fromkeys(
+        note
+        for group in groups
+        for note in group
+    ))
+
+
 def answer_question(
     frame: pd.DataFrame,
     question: str,
@@ -1415,7 +1431,7 @@ def answer_question(
             "plan": parsed.plan,
             "matched": parsed.matched,
             "ignored": parsed.ignored,
-            "notes": list(parsed.warnings) + list(answer.notes),
+            "notes": unique_notes(parsed.warnings, answer.notes),
             "rules_reason": "",
             "model_replies": [],
             "not_on_topic": False,
@@ -1488,10 +1504,10 @@ def answer_question(
         "plan": planned.plan,
         "matched": parsed.matched,
         "ignored": parsed.ignored,
-        "notes": (
-            list(parsed.warnings)
-            + list(planned.warnings)
-            + list(answer.notes)
+        "notes": unique_notes(
+            parsed.warnings,
+            planned.warnings,
+            answer.notes
         ),
         "rules_reason": parsed.reason,
         "model_replies": planned.replies,

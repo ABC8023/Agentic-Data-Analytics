@@ -2,6 +2,8 @@
 
 Ask questions about a CSV or Excel file in plain English, and get answers you can check.
 
+![Demo: a question answered with its plan and SQL, a question declined because the table can't answer it, and models trained, ranked by cross-validation and downloaded](docs/demo.gif)
+
 This is a data-analysis app built around one rule: **the language model plans, pandas computes.**
 
 - Most questions are read by a local rules parser and never reach a model.
@@ -301,6 +303,8 @@ ruff check .
 python -m unittest discover -s tests -t .
 python tools/eval_planner.py
 ```
+
+The demo at the top is recorded from the running app with `python tools/record_demo.py`, which writes `docs/demo.gif`. With a key set, the declined question goes to the model planner. Without one, the rules parser declines it.
 
 For design review, `tools/screenshot.py` captures the running app in headless Chrome, for example `python tools/screenshot.py dashboard --query sample=store_orders --full`. Long pages are split into tiles no larger than 1,800 px. The theme itself is set in `.streamlit/config.toml`.
 

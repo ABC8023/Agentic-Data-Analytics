@@ -8,6 +8,11 @@
 - Optional hyperparameter search. It tries up to 8 settings per model with randomised search inside the same folds, and shows the settings it chose. The page notes that a tuned cross-validated score is slightly optimistic, and the test score isn't.
 - A model download: a zip with the fitted pipeline in skops format, a model card (features, date conversions, scores, settings, a training-data fingerprint, library versions and caveats), and a loading guide. `ml_export.load_model` refuses a file with types this app never writes (`ml_export.py`).
 - `tools/screenshot.py --click` presses buttons and ticks checkboxes before the capture.
+- A captioned demo GIF at the top of the README, recorded from the running app by `tools/record_demo.py`. The script also checks, in a real browser, that the model download arrives.
+
+### Fixed
+
+- The "rows have no usable values" note appeared twice under one answer, because the parser and the executor both reported it.
 
 ### Changed
 

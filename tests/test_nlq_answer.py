@@ -802,3 +802,27 @@ class UnlabelledRankingTest(unittest.TestCase):
 
         self.assertEqual(answer.figures["leader"], "whale")
         self.assertEqual(answer.notes, [])
+
+
+class RepeatedNoteTest(unittest.TestCase):
+    """The parser and the executor both warn about unusable values."""
+
+    def test_an_excluded_rows_note_is_shown_once(self):
+        frame = flat_frame(days=40)
+        frame["revenue"] = frame["revenue"].astype(object)
+        frame.loc[:2, "revenue"] = "n/a"
+
+        result = nlq_answer.answer_question(frame, "total revenue", None)
+        excluded = [
+            note for note in result["notes"]
+            if "no usable 'revenue'" in note
+        ]
+
+        self.assertTrue(result["answer"].success)
+        self.assertEqual(len(excluded), 1)
+
+    def test_notes_keep_their_order(self):
+        self.assertEqual(
+            nlq_answer.unique_notes(["a", "b"], ["b", "c"], ["a"]),
+            ["a", "b", "c"]
+        )
